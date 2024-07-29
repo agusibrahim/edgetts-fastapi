@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  web:
+    image: tiangolo/uvicorn-gunicorn-fastapi:python3.8
+    container_name: fastapi_web
+    restart: always
+    env_file:
+      - .env
+    volumes:
+      - ./app:/app
+    expose:
+      - 8000
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.fastapi.rule=Host(`example.com`)"
+      - "traefik.http.routers.fastapi.entrypoints=web"
+      - "traefik.http.services.fastapi.loadbalancer.server.port=8000"
+    command: >
+      sh -c "pip install -r /app/requirements.txt &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+  traefik:
+    image: traefik:v2.5
+    container_name: traefik
+    restart: always
+    ports:
+      - "80:80"
+      - "8080:8080"
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--entrypoints.web.address=:80"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+
+networks:
+  default:
+    external:
+      name: traefik_network
+
