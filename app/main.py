@@ -9,22 +9,35 @@ app = FastAPI()
 
 class TextToSpeechRequest(BaseModel):
     text: str
-    voice: str = "en-US-JennyNeural"
+    voice: str = "id-ID-ArdiNeural"
+    subtitle: bool = False
+    words_per_subtitle: int = 8
 
 @app.post("/text-to-speech/")
 async def text_to_speech(request: TextToSpeechRequest):
     try:
         communicate = edge_tts.Communicate(text=request.text, voice=request.voice)
-        filename = "output_"+str(time.time)+".mp3"
-        await communicate.save(filename)
+        audio_data = bytearray()
+        subtitle_data = ""
 
-        with open(filename, "rb") as file:
-            audio_data = base64.b64encode(file.read()).decode("utf-8")
+        if request.subtitle:
+            submaker = edge_tts.SubMaker()
 
-        # Clean up the generated file
-        os.remove(filename)
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                audio_data.extend(chunk["data"])
+            elif chunk["type"] == "WordBoundary" and request.subtitle:
+                submaker.merge_cues(request.words_per_subtitle)
+                submaker.feed(chunk)
 
-        return {"audio": audio_data}
+        response = {
+            "audio": base64.b64encode(audio_data).decode("utf-8")
+        }
+
+        if request.subtitle:
+            response["subtitle"] = submaker.get_srt()
+
+        return response
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
